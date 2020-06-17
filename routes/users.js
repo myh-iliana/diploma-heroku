@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
+const officegen = require('officegen');
+const fs = require('fs');
+const json2xls = require('json2xls');
 
 const authenticateToken = require('../utils');
 const validations = require('./validations');
@@ -31,6 +34,17 @@ const includePostsWithUsers = [
     }],
   }
 ];
+const includePosts = [
+  {
+    model: Periodicity,
+  },
+  {
+    model: Monograph,
+  },
+  {
+    model: Thesis,
+  }
+];
 
 /* GET main user. */
 router.get('/account', authenticateToken, function (req, res, next) {
@@ -43,6 +57,71 @@ router.get('/account', authenticateToken, function (req, res, next) {
       if (user === null) res.status(404).send('Cannot find user');
 
       res.send(user.get());
+    })
+    .catch((err) => console.log('========', err));
+});
+
+router.get('/downloadPosts/:id', function (req, res, next) {
+  let docx = officegen('docx');
+
+  docx.on('finalize', function(written) {
+    console.log(
+      'Finish to create a Microsoft Word document.'
+    )
+  });
+
+  docx.on('error', function(err) {
+    console.log(err)
+  });
+
+  User.findOne({
+    where: { id: req.params.id },
+    attributes: { exclude: ["password"] },
+    include: includePostsWithUsers,
+  })
+    .then(async (user) => {
+      if (user === null) res.status(404).send('Cannot find user');
+
+      let docxP = docx.createP();
+      let out = fs.createWriteStream(`./uploads/${user.username}.docx`);
+
+      const periodicities = user.Periodicities;
+      const monographs = user.Monographs;
+      const thesis = user.Theses;
+
+      docxP.addText('Periodicity ', { bold: true, font_size: 20 });
+      docxP.addLineBreak();
+      periodicities.forEach((post, i) => {
+        docxP.addText(`${i + 1}. ${post.title}.`, { font_size: 16 });
+        docxP.addLineBreak();
+        const date = new Date(post.createdAt);
+        docxP.addText(`Date: ${date.toLocaleString()}`, { font_size: 15, color: '808080' });
+        docxP.addLineBreak();
+      });
+
+      docxP.addText('Monograph ', { bold: true, font_size: 20 });
+      docxP.addLineBreak();
+      monographs.forEach((post, i) => {
+        docxP.addText(`${i + 1}. ${post.title}.`, { font_size: 16 });
+        docxP.addLineBreak();
+        const date = new Date(post.createdAt);
+        docxP.addText(`Date: ${date.toLocaleString()}`, { font_size: 15, color: '808080' });
+        docxP.addLineBreak();
+      });
+
+      docxP.addText('Thesis ', { bold: true, font_size: 20 });
+      docxP.addLineBreak();
+      thesis.forEach((post, i) => {
+        docxP.addText(`${i + 1}. ${post.title}.`, { font_size: 16 });
+        docxP.addLineBreak();
+        const date = new Date(post.createdAt);
+        docxP.addText(`Date: ${date.toLocaleString()}`, { font_size: 15, color: '808080' });
+        docxP.addLineBreak();
+      });
+
+      docx.generate(out, {});
+
+      res.send(`${user.username}.docx`);
     })
     .catch((err) => console.log('========', err));
 });
